@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+pillow
+numpy
+faiss-cpu
+insightface
+onnxruntime
+python-ulid
+python-multipart
+scikit-learn
+ruff
+black
+pytest
+httpx
+mypy

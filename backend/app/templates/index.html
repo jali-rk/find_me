@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FindMe - Face-based Event Photo Finder</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 FindMe</h1>
+            <p>Face-based Event Photo Finder - Test Interface</p>
+        </header>
+
+        <main>
+            <!-- Create Event Section -->
+            <section class="card">
+                <h2>1. Create Event</h2>
+                <button id="createEventBtn" class="btn btn-primary">Create New Event</button>
+                <div id="eventResult" class="result"></div>
+            </section>
+
+            <!-- Upload Photos Section -->
+            <section class="card">
+                <h2>2. Upload Event Photos</h2>
+                <div class="form-group">
+                    <label for="eventIdUpload">Event ID:</label>
+                    <input type="text" id="eventIdUpload" placeholder="Paste event ID here">
+                </div>
+                <div class="form-group">
+                    <label for="photoFiles">Select Photos (multiple):</label>
+                    <input type="file" id="photoFiles" multiple accept="image/jpeg,image/jpg,image/png,image/webp">
+                </div>
+                <button id="uploadPhotosBtn" class="btn btn-primary">Upload Photos</button>
+                <div id="uploadResult" class="result"></div>
+            </section>
+
+            <!-- Match Selfie Section -->
+            <section class="card">
+                <h2>3. Match Selfie</h2>
+                <div class="form-group">
+                    <label for="eventIdMatch">Event ID:</label>
+                    <input type="text" id="eventIdMatch" placeholder="Paste event ID here">
+                </div>
+                <div class="form-group">
+                    <label for="selfieFile">Select Selfie:</label>
+                    <input type="file" id="selfieFile" accept="image/jpeg,image/jpg,image/png,image/webp">
+                </div>
+                <button id="matchSelfieBtn" class="btn btn-primary">Find Matching Photos</button>
+                <div id="matchResult" class="result"></div>
+            </section>
+
+            <!-- Results Gallery -->
+            <section class="card" id="gallerySection" style="display: none;">
+                <h2>Matched Photos</h2>
+                <div id="gallery" class="gallery"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Phase 1 MVP - Local Proof of Concept | <a href="/docs">API Documentation</a></p>
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1';
+        let currentEventId = '';
+
+        // Create Event
+        document.getElementById('createEventBtn').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('eventResult');
+            resultDiv.innerHTML = '<p class="loading">Creating event...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/events`, {
+                    method: 'POST',
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentEventId = data.event_id;
+                    document.getElementById('eventIdUpload').value = currentEventId;
+                    document.getElementById('eventIdMatch').value = currentEventId;
+
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h3>✓ Event Created</h3>
+                            <p><strong>Event ID:</strong> <code>${data.event_id}</code></p>
+                            <p><strong>Data Directory:</strong> ${data.data_dir}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${JSON.stringify(data)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Upload Photos
+        document.getElementById('uploadPhotosBtn').addEventListener('click', async () => {
+            const eventId = document.getElementById('eventIdUpload').value;
+            const files = document.getElementById('photoFiles').files;
+            const resultDiv = document.getElementById('uploadResult');
+
+            if (!eventId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Event ID</div>';
+                return;
+            }
+
+            if (files.length === 0) {
+                resultDiv.innerHTML = '<div class="error">Please select at least one photo</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = `<p class="loading">Uploading ${files.length} photo(s)...</p>`;
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/events/${eventId}/photos`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (response.ok || response.status === 207) {
+                    let html = '<div class="success"><h3>✓ Upload Complete</h3>';
+                    html += `<p><strong>Total Photos:</strong> ${data.totals.photos}</p>`;
+                    html += `<p><strong>Total Faces:</strong> ${data.totals.faces}</p>`;
+
+                    if (data.accepted.length > 0) {
+                        html += '<h4>Accepted:</h4><ul>';
+                        data.accepted.forEach(photo => {
+                            html += `<li>${photo.photo_id}: ${photo.faces} face(s)</li>`;
+                        });
+                        html += '</ul>';
+                    }
+
+                    if (data.rejected.length > 0) {
+                        html += '<h4>Rejected:</h4><ul>';
+                        data.rejected.forEach(photo => {
+                            html += `<li>${photo.filename}: ${photo.reason}</li>`;
+                        });
+                        html += '</ul>';
+                    }
+
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${JSON.stringify(data)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Match Selfie
+        document.getElementById('matchSelfieBtn').addEventListener('click', async () => {
+            const eventId = document.getElementById('eventIdMatch').value;
+            const file = document.getElementById('selfieFile').files[0];
+            const resultDiv = document.getElementById('matchResult');
+            const gallery = document.getElementById('gallery');
+            const gallerySection = document.getElementById('gallerySection');
+
+            if (!eventId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Event ID</div>';
+                return;
+            }
+
+            if (!file) {
+                resultDiv.innerHTML = '<div class="error">Please select a selfie</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p class="loading">Matching faces...</p>';
+            gallerySection.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('selfie', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/events/${eventId}/match`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    const matches = data.results.length;
+
+                    if (matches > 0) {
+                        resultDiv.innerHTML = `
+                            <div class="success">
+                                <h3>✓ Found ${matches} Matching Photo(s)</h3>
+                            </div>
+                        `;
+
+                        // Display gallery
+                        gallery.innerHTML = '';
+                        data.results.forEach((match, index) => {
+                            const photoUrl = `/api/v1/events/${eventId}/photos/${match.photo_id}`;
+                            const item = document.createElement('div');
+                            item.className = 'gallery-item';
+                            item.innerHTML = `
+                                <img src="${photoUrl}" alt="Match ${index + 1}">
+                                <div class="match-info">
+                                    <p><strong>Score:</strong> ${(match.score * 100).toFixed(1)}%</p>
+                                    <p><strong>Photo ID:</strong> ${match.photo_id}</p>
+                                </div>
+                            `;
+                            gallery.appendChild(item);
+                        });
+
+                        gallerySection.style.display = 'block';
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="info">
+                                <h3>No matches found</h3>
+                                <p>No photos matched the selfie above the threshold.</p>
+                            </div>
+                        `;
+                        gallerySection.style.display = 'none';
+                    }
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${JSON.stringify(data)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

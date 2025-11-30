@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FindMe - Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #667eea;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        .face-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .face-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        .face-card:hover {
+            transform: scale(1.05);
+        }
+        .face-card img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+        .face-meta {
+            padding: 8px;
+            font-size: 0.75rem;
+            color: #666;
+        }
+        .nav-links {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            margin: 0 15px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .metadata-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        .metadata-table th,
+        .metadata-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .metadata-table th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+        .metadata-table tr:hover {
+            background: #f8f9fa;
+        }
+        .bbox-display {
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 FindMe Admin Dashboard</h1>
+            <p>Event Analytics & Visualization</p>
+        </header>
+
+        <main>
+            <div class="nav-links">
+                <a href="/">← Back to User Interface</a>
+                <a href="/docs">API Documentation</a>
+            </div>
+
+            <!-- Event Selector -->
+            <section class="card">
+                <h2>Select Event</h2>
+                <div class="form-group">
+                    <label for="eventIdAdmin">Event ID:</label>
+                    <input type="text" id="eventIdAdmin" placeholder="Enter event ID">
+                </div>
+                <button id="loadEventBtn" class="btn btn-primary">Load Event Data</button>
+                <div id="eventLoadResult" class="result"></div>
+            </section>
+
+            <!-- Event Statistics -->
+            <section class="card" id="statsSection" style="display: none;">
+                <h2>Event Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-photos">0</div>
+                        <div class="stat-label">Total Photos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-faces">0</div>
+                        <div class="stat-label">Total Faces</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-avg">0</div>
+                        <div class="stat-label">Faces per Photo</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-dim">512</div>
+                        <div class="stat-label">Embedding Dim</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Face Crops -->
+            <section class="card" id="facesSection" style="display: none;">
+                <h2>Detected Faces</h2>
+                <button id="generateCropsBtn" class="btn btn-primary">Generate Face Crops</button>
+                <div id="cropResult" class="result"></div>
+                <div id="faceGrid" class="face-grid"></div>
+            </section>
+
+            <!-- Metadata Table -->
+            <section class="card" id="metadataSection" style="display: none;">
+                <h2>Face Metadata</h2>
+                <div style="overflow-x: auto;">
+                    <table class="metadata-table" id="metadataTable">
+                        <thead>
+                            <tr>
+                                <th>Face ID</th>
+                                <th>Photo ID</th>
+                                <th>Bounding Box</th>
+                                <th>Embedding ID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="metadataBody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Embedding Visualization -->
+            <section class="card" id="embeddingSection" style="display: none;">
+                <h2>Embedding Visualization (t-SNE)</h2>
+                <button id="generateProjectionBtn" class="btn btn-primary">Generate t-SNE Projection</button>
+                <div id="projectionResult" class="result"></div>
+                <div id="embeddingPlot" style="width: 100%; height: 600px; margin-top: 20px;"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Admin Dashboard - Phase 1 MVP | <a href="/">User Interface</a></p>
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1';
+        let currentEventId = '';
+
+        // Load Event Data
+        document.getElementById('loadEventBtn').addEventListener('click', async () => {
+            const eventId = document.getElementById('eventIdAdmin').value;
+            const resultDiv = document.getElementById('eventLoadResult');
+
+            if (!eventId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Event ID</div>';
+                return;
+            }
+
+            currentEventId = eventId;
+            resultDiv.innerHTML = '<p class="loading">Loading event data...</p>';
+
+            try {
+                // Load statistics
+                const statsResponse = await fetch(`${API_BASE}/admin/events/${eventId}/stats`);
+                
+                if (!statsResponse.ok) {
+                    throw new Error('Event not found');
+                }
+
+                const statsData = await statsResponse.json();
+
+                // Display statistics
+                document.getElementById('stat-photos').textContent = statsData.total_photos;
+                document.getElementById('stat-faces').textContent = statsData.total_faces;
+                document.getElementById('stat-avg').textContent = statsData.faces_per_photo;
+                document.getElementById('stat-dim').textContent = statsData.embedding_dimension;
+
+                document.getElementById('statsSection').style.display = 'block';
+                document.getElementById('facesSection').style.display = 'block';
+                document.getElementById('metadataSection').style.display = 'block';
+                document.getElementById('embeddingSection').style.display = 'block';
+
+                // Load metadata
+                loadMetadata(eventId);
+
+                resultDiv.innerHTML = '<div class="success"><h3>✓ Event Data Loaded</h3></div>';
+
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Generate Face Crops
+        document.getElementById('generateCropsBtn').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('cropResult');
+            resultDiv.innerHTML = '<p class="loading">Generating face crops...</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/events/${currentEventId}/generate-crops`, {
+                    method: 'POST',
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="success">✓ Generated ${data.faces.length} face crops</div>`;
+                    displayFaces(data.faces);
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${JSON.stringify(data)}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Display Faces
+        function displayFaces(faces) {
+            const grid = document.getElementById('faceGrid');
+            grid.innerHTML = '';
+
+            faces.forEach(face => {
+                const faceUrl = `${API_BASE}/admin/events/${currentEventId}/faces/${face.face_id}`;
+                const card = document.createElement('div');
+                card.className = 'face-card';
+                card.innerHTML = `
+                    <img src="${faceUrl}" alt="Face ${face.face_id}">
+                    <div class="face-meta">
+                        <div style="font-weight: 600; margin-bottom: 4px;">${face.face_id.substring(0, 8)}...</div>
+                        <div>Photo: ${face.photo_id.substring(0, 8)}...</div>
+                    </div>
+                `;
+                card.onclick = () => showFaceDetails(face);
+                grid.appendChild(card);
+            });
+        }
+
+        // Load Metadata
+        async function loadMetadata(eventId) {
+            try {
+                const response = await fetch(`${API_BASE}/admin/events/${eventId}/metadata`);
+                const data = await response.json();
+
+                const tbody = document.getElementById('metadataBody');
+                tbody.innerHTML = '';
+
+                data.faces.forEach(face => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${face.face_id}</td>
+                        <td>${face.photo_id}</td>
+                        <td class="bbox-display">[${face.bbox.join(', ')}]</td>
+                        <td>${face.embedding_id}</td>
+                    `;
+                });
+            } catch (error) {
+                console.error('Failed to load metadata:', error);
+            }
+        }
+
+        // Show Face Details
+        function showFaceDetails(face) {
+            alert(`Face Details:\n\nFace ID: ${face.face_id}\nPhoto ID: ${face.photo_id}\nBounding Box: [${face.bbox.join(', ')}]`);
+        }
+
+        // Generate t-SNE Projection
+        document.getElementById('generateProjectionBtn').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('projectionResult');
+            resultDiv.innerHTML = '<p class="loading">Computing t-SNE projection... This may take a minute.</p>';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/events/${currentEventId}/projections`);
+
+                if (!response.ok) {
+                    throw new Error('Failed to compute projection');
+                }
+
+                const data = await response.json();
+
+                if (data.projections.length === 0) {
+                    resultDiv.innerHTML = '<div class="error">No embeddings found</div>';
+                    return;
+                }
+
+                resultDiv.innerHTML = `<div class="success">✓ Generated projection for ${data.projections.length} faces</div>`;
+                
+                // Create Plotly visualization
+                plotEmbeddings(data.projections);
+
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Plot Embeddings with Plotly
+        function plotEmbeddings(projections) {
+            // Group by photo_id for coloring
+            const photoGroups = {};
+            projections.forEach(proj => {
+                if (!photoGroups[proj.photo_id]) {
+                    photoGroups[proj.photo_id] = [];
+                }
+                photoGroups[proj.photo_id].push(proj);
+            });
+
+            // Create traces for each photo
+            const traces = Object.entries(photoGroups).map(([photoId, faces]) => {
+                return {
+                    x: faces.map(f => f.x),
+                    y: faces.map(f => f.y),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Photo ${photoId.substring(0, 8)}...`,
+                    text: faces.map(f => `Face: ${f.face_id.substring(0, 8)}...<br>Photo: ${f.photo_id.substring(0, 8)}...`),
+                    hovertemplate: '%{text}<br>X: %{x:.2f}<br>Y: %{y:.2f}<extra></extra>',
+                    marker: {
+                        size: 10,
+                        opacity: 0.7,
+                    }
+                };
+            });
+
+            const layout = {
+                title: 't-SNE Projection of Face Embeddings',
+                xaxis: { title: 't-SNE Dimension 1' },
+                yaxis: { title: 't-SNE Dimension 2' },
+                hovermode: 'closest',
+                showlegend: true,
+                height: 600,
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+            };
+
+            Plotly.newPlot('embeddingPlot', traces, layout, config);
+        }
+    </script>
+</body>
+</html>
